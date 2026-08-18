@@ -31,7 +31,34 @@ valoare reală e o decizie proastă, indiferent cât de verzi sunt testele.
 | `AntiFlashloanGuard` | nu mai e necesar | — |
 | `StabilityFund` | **nu se implementează** — vezi ABATERI.md | — |
 
-**55 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
+**62 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
+
+## Deploy
+
+```bash
+export PRIVATE_KEY=0x...
+export GARDIAN=0x...      # multisig, NU cheia de deploy
+export TREZORERIE=0x...
+export STAKING=0x...
+
+forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast --verify
+```
+
+Scriptul face configurarea în ordinea corectă și **predă rolurile către DAO**,
+apoi verifică predarea și dă revert dacă deployer-ul a rămas cu putere.
+
+Ordinea contează. Două greșeli frecvente pe care le previne:
+
+- **Scutirile înainte de primii tokeni.** Fără ele, Vault-ul își erodează
+  propriile depozite și mizele din DAO se topesc în timpul votării.
+- **Renunțarea la roluri la final.** Cine face deploy primește inevitabil
+  guvernanța, ca să poată configura. Dacă nu o cedează, tot discursul despre
+  guvernanță descentralizată e fals: o cheie privată schimbă orice parametru
+  fără vot.
+
+`emite` **nu** e pe lista albă a DAO-ului. Nicio propunere nu poate crea
+tokeni. După deploy nimeni nu mai are rolul `EMITENT` — emisiunea inițială se
+face înainte de predare.
 
 ## Important: codul diferă de specificația inițială
 
