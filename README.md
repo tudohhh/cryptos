@@ -23,12 +23,15 @@ valoare reală e o decizie proastă, indiferent cât de verzi sunt testele.
 |---|---|---|
 | `MonedaOamenilor.sol` | funcțional | 11 |
 | `SavingsVault.sol` | funcțional | 10 |
+| `QuadraticDAO.sol` | funcțional | 12 |
+| `CircuitBreaker.sol` | funcțional | 8 |
+| `SessionKeysManager.sol` | funcțional | 8 |
+| `POLVesting.sol` | funcțional | 6 |
 | `Splitter` | logica e în token | — |
-| `QuadraticDAO` | neimplementat | — |
-| `CircuitBreaker` | neimplementat | — |
-| `SessionKeysManager` | neimplementat | — |
-| `StabilityFund` | neimplementat | — |
-| `POLVesting` | neimplementat | — |
+| `AntiFlashloanGuard` | nu mai e necesar | — |
+| `StabilityFund` | **nu se implementează** — vezi ABATERI.md | — |
+
+**55 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
 
 ## Important: codul diferă de specificația inițială
 

@@ -72,7 +72,11 @@ function verifySignature(...) private pure returns (bool) {
 Marcată `pure` în timp ce pretindea că verifică. Orice agent cu o cheie
 putea transfera până la `maxSpend` fără acordul utilizatorului.
 
-**Statut:** contractul nu e încă implementat. Nu-l scriu cu placeholder.
+**Acum:** EIP-712 + `ECDSA.recover`, iar semnatarul trebuie să fie
+deținătorul contului. În plus, nonce și deadline pe fiecare operațiune —
+specificația semna `(user, amount, recipient, chainid)`, fără nonce, deci
+aceeași semnătură se putea rejuca la infinit.
+`test_AgentulNuPoateExecutaFaraSemnatura`, `test_SemnaturaNuSePoateRejuca`.
 
 ### 7. `_applyDemurrage` ardea de două ori și transfera din nimic
 
@@ -94,7 +98,9 @@ revert (`ERC20InvalidReceiver`).
 `QuadraticDAO.vote` lua `votePower²` tokeni și nu exista nicio funcție de
 retragere. Fiecare vot distrugea definitiv miza.
 
-**Statut:** DAO-ul nu e încă implementat.
+**Acum:** `revendicaMiza(id)` — funcția care lipsea complet. Miza se
+blochează pe durata votării și se recuperează după, inclusiv la propuneri
+anulate: miza e garanție, nu pedeapsă. `test_MizaSeRecupereazaDupaVot`.
 
 ### 10. `emit DemurrageApplied(..., inactiveTime > ...)` nu compila
 
@@ -131,16 +137,69 @@ variantă are un nume și nu e „bug".
 Vault-ul, trezoreria și contractul de staking nu plătesc demurrage. Fără
 asta, tokenii din Vault s-ar eroda — adică exact opusul scopului Vault-ului.
 
-## Ce nu e implementat încă
+### 15. CircuitBreaker: atestare M-din-N, nu o singură adresă
 
-`Splitter` (logica e în token), `QuadraticDAO`, `CircuitBreaker`,
-`SessionKeysManager`, `AntiFlashloanGuard`, `StabilityFund`, `POLVesting`.
+Documentul descria „oracole rotaționale, 3 din 5", dar contractul avea
+`onlyAIOracle` — o adresă care putea îngheța trezoreria singură. Cheia aia
+compromisă însemna protocol oprit.
 
-Două observații despre ele, din specificație:
+**Acum:** `pragAtestari` semnături distincte pe **același** raport,
+identificat prin hash-ul conținutului. Atestări pe rapoarte diferite nu se
+adună. `test_UnSingurOracolNuPoateIngheta`.
 
-- **CircuitBreaker** descrie oracole 3-din-5, dar contractul avea un singur
-  `aiOracle` care putea îngheța trezoreria. Când îl implementăm, multi-sig
-  real, nu o adresă.
-- **StabilityFund** care cumpără propriul token de pe piață cu fonduri ale
-  protocolului intră peste prevederile de abuz de piață din MiCA. Nu e o
-  problemă de cod.
+### 16. Înghețarea expiră singură
+
+`autoUnfreeze` exista în specificație, dar nimic nu garanta că o cheamă
+cineva. O trezorerie înghețată la nesfârșit fiindcă nimeni nu apasă un buton
+e același lucru cu o trezorerie pierdută.
+
+**Acum:** `esteInghetat()` returnează `false` automat după `durataInghetare`.
+`test_InghetareaExpiraSingura`.
+
+### 17. Propunerile DAO execută apeluri de pe listă albă
+
+Specificația avea un `_executeAction` gol. O propunere care trece trebuie să
+poată chema ceva — dar nu orice: fără listă albă, o propunere acceptată
+putea chema `emite()` și crea tokeni la infinit.
+
+Lista albă se schimbă tot prin vot, iar permisiunea se reverifică **la
+execuție**, nu doar la propunere: o propunere veche nu trebuie să poată
+folosi o permisiune retrasă între timp.
+
+### 18. Gardianul poate anula, nu poate executa
+
+Asimetrie deliberată. Puterea de a opri ceva rău e mult mai puțin
+periculoasă decât puterea de a face ceva.
+
+### 19. POLVesting: a doua alocare nu o mai șterge pe prima
+
+`vestingSchedules[beneficiary] = schedule` suprascria graficul anterior. O a
+doua alocare pentru aceeași persoană îi pierdea prima.
+**Acum:** listă de grafice per beneficiar.
+
+### 20. Revocarea vesting-ului nu confiscă retroactiv
+
+`revoked` exista ca flag, dar nicio funcție nu-l seta și nu se spunea ce se
+întâmplă cu tokenii. **Acum:** ce s-a maturizat rămâne al beneficiarului,
+doar partea nematurizată se întoarce la trezorerie. Un vesting care poate fi
+revocat retroactiv nu e vesting.
+
+## Ce nu e implementat
+
+**`StabilityFund`** — și nu din lipsă de timp.
+
+Un fond al protocolului care cumpără automat propriul token de pe piață
+când prețul scade, cu praguri nepublicate și intervenții netransparente,
+intră direct peste prevederile de abuz de piață din MiCA (Titlul VI).
+Nu e o problemă pe care o rezolvi în Solidity.
+
+Dacă vrei totuși mecanism de stabilitate, varianta apărabilă arată altfel:
+intervenții anunțate în avans, praguri publice și imuabile, plafon pe
+volum, fiecare operațiune vizibilă on-chain înainte să se execute.
+Diferența dintre „operațiune de trezorerie transparentă" și „manipulare"
+stă exact în lucrurile astea. Merită discutată cu un avocat înainte de cod.
+
+**`AntiFlashloanGuard`** — nu mai e nevoie de el ca modul separat.
+Protecția din specificație (număr de bloc per adresă) se ocolea banal cu
+alte adrese. Vault-ul are scadențe minime și penalizare pe principal, ceea
+ce face atacul neprofitabil fără a mai adăuga un contract.
