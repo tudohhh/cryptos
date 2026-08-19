@@ -53,8 +53,17 @@ contract SessionKeysManager is EIP712, ReentrancyGuard {
 
     /// cont -> agent -> cheie
     mapping(address => mapping(address => Cheie)) public chei;
-    /// cont -> agent -> destinatar -> permis
-    mapping(address => mapping(address => mapping(address => bool))) public destinatarPermis;
+    /// Versiunea cheii. Creste la fiecare creare/revocare, iar permisiunile
+    /// sunt indexate pe ea.
+    ///
+    /// DE CE: fara versionare, `destinatarPermis[cont][agent][X]` supravietuia
+    /// revocarii. Utilizatorul revoca cheia crezand ca a taiat accesul, apoi
+    /// creeaza alta cheie pentru acelasi agent — si vechii destinatari sunt
+    /// inca autorizati, fara ca nimeni sa fi cerut asta. §6.1 din
+    /// docs/AUDIT-JURIDIC.md, "Session Keys — destinatari persistenti".
+    mapping(address => mapping(address => uint256)) public versiuneCheie;
+    /// cont -> agent -> versiune -> destinatar -> permis
+    mapping(address => mapping(address => mapping(uint256 => mapping(address => bool)))) public destinatarPermis;
     /// cont -> nonce consumat
     mapping(address => mapping(uint256 => bool)) public nonceFolosit;
 
@@ -100,8 +109,10 @@ contract SessionKeysManager is EIP712, ReentrancyGuard {
             activa: true
         });
 
+        // Versiune noua => permisiunile vechi devin inaccesibile automat.
+        uint256 v = ++versiuneCheie[msg.sender][agent];
         for (uint256 i = 0; i < destinatari.length; i++) {
-            destinatarPermis[msg.sender][agent][destinatari[i]] = true;
+            destinatarPermis[msg.sender][agent][v][destinatari[i]] = true;
         }
 
         emit CheieCreata(msg.sender, agent, plafonTotal, block.timestamp + durata);
@@ -109,6 +120,8 @@ contract SessionKeysManager is EIP712, ReentrancyGuard {
 
     function revoca(address agent) external {
         chei[msg.sender][agent].activa = false;
+        // Invalideaza si permisiunile, nu doar cheia.
+        versiuneCheie[msg.sender][agent] += 1;
         emit CheieRevocata(msg.sender, agent);
     }
 
@@ -133,7 +146,8 @@ contract SessionKeysManager is EIP712, ReentrancyGuard {
         if (block.timestamp > k.expira) revert CheieExpirata();
         if (suma > k.plafonOperatiune) revert PesteplafonOperatiune();
         if (uint256(k.cheltuit) + suma > k.plafonTotal) revert PestePlafonTotal();
-        if (!destinatarPermis[cont][msg.sender][destinatar]) revert DestinatarNepermis();
+        uint256 v = versiuneCheie[cont][msg.sender];
+        if (!destinatarPermis[cont][msg.sender][v][destinatar]) revert DestinatarNepermis();
 
         // Contor zilnic pe zi calendaristica UTC, nu pe fereastra mobila:
         // altfel un agent poate face 2x maximul la granita ferestrei.

@@ -307,7 +307,10 @@ contract CircuitBreakerTest is Test {
         }
         assertTrue(cb.esteInghetat());
 
-        for (uint256 i = 0; i < 5; i++) {
+        // pragAnulare e 2, strict sub pragAtestari (3): repornirea trebuie
+        // sa fie mai usoara decat oprirea, altfel oracoli compromise pot
+        // face DoS permanent.
+        for (uint256 i = 0; i < 2; i++) {
             vm.prank(oracoli[i]);
             cb.voteazaAnulare(raport);
         }

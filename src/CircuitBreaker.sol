@@ -45,7 +45,16 @@ contract CircuitBreaker is AccessControl {
     mapping(bytes32 => uint32) public voturiAnulare;
 
     uint256 public pragAtestari = 3;
-    uint256 public pragAnulare = 5;
+    /// Strict mai mic decat pragAtestari: repornirea nu poate fi mai grea
+    /// decat oprirea.
+    uint256 public pragAnulare = 2;
+
+    /// Limita de rata: cate inghetari sunt permise intr-o fereastra. Fara
+    /// ea, oracoli compromise pot ingheta la nesfarsit, reluand dupa fiecare
+    /// expirare.
+    uint256 public maxInghetariPeZi = 3;
+    uint64 public ziCurenta;
+    uint32 public inghetariAzi;
     /// Cat timp ramane valabila o atestare pana se aduna pragul. Fara
     /// fereastra, atestari de acum o luna s-ar putea combina cu una noua.
     uint256 public fereastraAtestare = 1 hours;
@@ -97,6 +106,14 @@ contract CircuitBreaker is AccessControl {
         emit Atestat(hashRaport, msg.sender, r.atestari);
 
         if (r.atestari >= pragAtestari) {
+            uint64 azi = uint64(block.timestamp / 1 days);
+            if (azi != ziCurenta) {
+                ziCurenta = azi;
+                inghetariAzi = 0;
+            }
+            require(inghetariAzi < maxInghetariPeZi, "limita zilnica de inghetari");
+            inghetariAzi += 1;
+
             r.declansat = true;
             inghetatLa = uint64(block.timestamp);
             raportActiv = hashRaport;
@@ -122,6 +139,11 @@ contract CircuitBreaker is AccessControl {
     // --- guvernanta ---
     function setPraguri(uint256 atestari, uint256 anulare) external onlyRole(GUVERNANTA) {
         require(atestari > 1, "minim 2 atestari");
+        // Ridicarea inghetarii trebuie sa fie MAI USOARA decat declansarea.
+        // Altfel un set de oracoli compromise poate opri protocolul, iar
+        // validatorii nu au cum sa-l reporneasca — DoS permanent cu aparenta
+        // de siguranta. §6.1, "Circuit breaker — DoS repetat".
+        require(anulare < atestari, "anularea trebuie sa fie mai usoara");
         pragAtestari = atestari;
         pragAnulare = anulare;
     }

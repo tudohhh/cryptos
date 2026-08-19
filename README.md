@@ -21,8 +21,7 @@ valoare reală e o decizie proastă, indiferent cât de verzi sunt testele.
 
 | Contract | Statut | Teste |
 |---|---|---|
-| `MonedaOamenilor.sol` | funcțional | 11 |
-| `SavingsVault.sol` | funcțional | 10 |
+| `MonedaOamenilor.sol` | funcțional, cu blocare in-place | 21 |
 | `QuadraticDAO.sol` | funcțional | 12 |
 | `CircuitBreaker.sol` | funcțional | 8 |
 | `SessionKeysManager.sol` | funcțional | 8 |
@@ -31,7 +30,7 @@ valoare reală e o decizie proastă, indiferent cât de verzi sunt testele.
 | `AntiFlashloanGuard` | nu mai e necesar | — |
 | `StabilityFund` | **nu se implementează** — vezi ABATERI.md | — |
 
-**69 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
+**70 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
 
 ## Deploy
 
@@ -115,5 +114,31 @@ rezolvare. Până la o decizie, **whitepaper-ul nu are voie să afirme că
 deținătorii inactivi plătesc demurrage** — la literă, plătesc doar cei
 neinformați.
 
-**Vault:** 3/6/12 luni, scutit de demurrage, randament finanțat dintr-o
-rezervă. Depunerea e refuzată dacă rezerva nu acoperă randamentul promis.
+**Blocare in-place** (înlocuiește `SavingsVault`, care a fost retras):
+
+`blocheaza(pana)` restricționează propriul sold până la o dată, maxim un an.
+**Tokenii nu părăsesc contul** — `balanceOf` îi conține tot timpul. Nu există
+custodie, nu există randament promis, nu există penalizare de ieșire.
+
+Beneficiul blocării este scutirea de demurrage. Atât. Blochezi ca să nu
+pierzi, nu ca să câștigi.
+
+De ce s-a schimbat: `SavingsVault` muta tokenii în contract, ceea ce făcea
+din utilizator un creditor în loc de proprietar — adică **custodie de
+criptoactive în numele clienților**, serviciu CASP sub MiCA art. 59. Iar
+randamentul de 2% garantat, finanțat din prelevări de la alți deținători,
+activa simultan testul Howey și analogia cu depozitul bancar. Vezi §2.3 din
+[`docs/AUDIT-JURIDIC.md`](docs/AUDIT-JURIDIC.md).
+
+## Imutabilitate
+
+Guvernanța poate modifica **exact trei parametri**: ratele de demurrage,
+taxa de tranzacție și pragurile. Nimic altceva, niciodată. Nu se poate
+autoextinde: `setPermis` nu e pe propria listă albă.
+
+Nimeni — inclusiv fondatorii — nu poate emite tokeni noi, nu poate accesa
+fondurile utilizatorilor și nu poate modifica altceva. E verificabil on-chain.
+
+Asta e o proprietate, nu o limitare, și trebuie descrisă ca atare. Orice
+material care sugerează o guvernanță adaptabilă sau un roadmap de parametri
+ar fi fals.

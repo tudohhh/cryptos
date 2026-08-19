@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
 import {MonedaOamenilor} from "../src/MonedaOamenilor.sol";
-import {SavingsVault} from "../src/SavingsVault.sol";
 import {QuadraticDAO} from "../src/QuadraticDAO.sol";
 import {CircuitBreaker} from "../src/CircuitBreaker.sol";
 import {SessionKeysManager} from "../src/SessionKeysManager.sol";
@@ -26,7 +25,6 @@ import {POLVesting} from "../src/POLVesting.sol";
 ///     --broadcast --verify
 contract Deploy is Script {
     MonedaOamenilor public token;
-    SavingsVault public vault;
     QuadraticDAO public dao;
     CircuitBreaker public breaker;
     SessionKeysManager public sesiuni;
@@ -54,7 +52,6 @@ contract Deploy is Script {
         // --- 1. Contractele ---
         token = new MonedaOamenilor(deployer);
         breaker = new CircuitBreaker(deployer);
-        vault = new SavingsVault(address(token), deployer);
         dao = new QuadraticDAO(address(token), gardian);
         sesiuni = new SessionKeysManager(address(token));
         vesting = new POLVesting(address(token), deployer, trezorerie);
@@ -63,7 +60,6 @@ contract Deploy is Script {
         // OBLIGATORIU inainte ca vreun token sa ajunga in contractele astea.
         // Fara scutire, Vault-ul isi erodeaza propriile depozite si mizele
         // din DAO se topesc in timpul votarii — exact opusul scopului lor.
-        token.setScutit(address(vault), true);
         token.setScutit(address(dao), true);
         token.setScutit(address(vesting), true);
         token.setScutit(address(sesiuni), true);
@@ -71,18 +67,21 @@ contract Deploy is Script {
         // --- 3. Destinatiile pentru 33/33/34 ---
         // setDestinatii scuteste automat trezoreria si stakingul.
         token.setDestinatii(trezorerie, staking);
-        vault.setTrezorerie(trezorerie);
 
         // --- 4. Lista alba a DAO-ului ---
         // Trebuie facuta INAINTE de prima propunere: initializeazaPermisiuni
         // refuza dupa aceea. Aici alegem exact ce poate schimba guvernanta.
         // Observa ce NU e pe lista: `emite`. O propunere nu trebuie sa poata
         // crea tokeni la infinit.
-        bytes4[] memory permise = new bytes4[](4);
+        // `setScutit` NU e pe lista. Puterea de a scuti selectiv un cont de
+        // demurrage e putere de a trata diferit doi detinatori — exact ce
+        // ANPC numeste tratament discriminatoriu. Scutirile contractelor
+        // protocolului se fac aici, o data, si raman fixe.
+        // §6.1, "setScutit discretionar".
+        bytes4[] memory permise = new bytes4[](3);
         permise[0] = MonedaOamenilor.setRate.selector;
         permise[1] = MonedaOamenilor.setTaxa.selector;
         permise[2] = MonedaOamenilor.setPraguri.selector;
-        permise[3] = MonedaOamenilor.setScutit.selector;
         // gardian == deployer in configuratia implicita; daca gardianul e
         // alt multisig, pasul asta se face din el.
         if (gardian == deployer) {
@@ -93,22 +92,18 @@ contract Deploy is Script {
 
         // --- 5. PREDAREA ROLURILOR ---
         token.grantRole(token.GUVERNANTA(), address(dao));
-        vault.grantRole(vault.GUVERNANTA(), address(dao));
         breaker.grantRole(breaker.GUVERNANTA(), address(dao));
 
         // Renuntarea, in ordine: intai rolurile de lucru, la final adminul.
         // Odata renuntat DEFAULT_ADMIN_ROLE, operatiunea e ireversibila.
         token.renounceRole(token.GUVERNANTA(), deployer);
         token.renounceRole(token.EMITENT(), deployer);
-        vault.renounceRole(vault.GUVERNANTA(), deployer);
         breaker.renounceRole(breaker.GUVERNANTA(), deployer);
 
         token.grantRole(token.DEFAULT_ADMIN_ROLE(), address(dao));
-        vault.grantRole(vault.DEFAULT_ADMIN_ROLE(), address(dao));
         breaker.grantRole(breaker.DEFAULT_ADMIN_ROLE(), address(dao));
 
         token.renounceRole(token.DEFAULT_ADMIN_ROLE(), deployer);
-        vault.renounceRole(vault.DEFAULT_ADMIN_ROLE(), deployer);
         breaker.renounceRole(breaker.DEFAULT_ADMIN_ROLE(), deployer);
 
         // POLVesting lipsea complet din etapa asta. Deployer-ul ramanea
@@ -130,11 +125,9 @@ contract Deploy is Script {
         require(!token.hasRole(token.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe token");
         require(!token.hasRole(token.GUVERNANTA(), deployer), "deployer inca e guvernanta");
         require(!token.hasRole(token.EMITENT(), deployer), "deployer inca poate emite");
-        require(!vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe vault");
         require(!breaker.hasRole(breaker.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe breaker");
         require(token.hasRole(token.GUVERNANTA(), address(dao)), "DAO nu are guvernanta");
         require(vesting.administrator() == address(dao), "deployer inca administreaza vesting-ul");
-        require(token.scutit(address(vault)), "vault neexceptat: depozitele se erodeaza");
         require(token.scutit(address(dao)), "DAO neexceptat: mizele se topesc");
     }
 
@@ -142,7 +135,6 @@ contract Deploy is Script {
         console.log("");
         console.log("=== ADRESE (Base Sepolia) ===");
         console.log("MonedaOamenilor  ", address(token));
-        console.log("SavingsVault     ", address(vault));
         console.log("QuadraticDAO     ", address(dao));
         console.log("CircuitBreaker   ", address(breaker));
         console.log("SessionKeys      ", address(sesiuni));

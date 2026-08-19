@@ -67,6 +67,24 @@ contract MonedaOamenilor is ERC20, AccessControl {
     /// Ultimul moment cand contul a avut activitate. 0 = cont nou, netaxat.
     mapping(address => uint256) public ultimaActivitate;
 
+    /// Blocare IN-PLACE: pana cand nu poate misca soldul din propriul cont.
+    /// Tokenii NU pleaca nicaieri. `balanceOf` ii contine tot timpul.
+    ///
+    /// De ce asa si nu prin `SavingsVault`: mutarea tokenilor intr-un
+    /// contract face din utilizator un creditor, nu un proprietar — adica
+    /// exact custodie de criptoactive in numele clientilor (MiCA art. 59),
+    /// serviciu CASP pentru care e nevoie de autorizatie. Blocarea in-place
+    /// e o restrictie de dispozitie auto-impusa asupra propriului activ.
+    /// Nimeni nu detine nimic al altcuiva. §2.3 din docs/AUDIT-JURIDIC.md.
+    ///
+    /// Beneficiul blocarii e scutirea de demurrage. Atat. Fara randament:
+    /// blochezi ca sa nu pierzi, nu ca sa castigi.
+    mapping(address => uint64) public blocatPanaLa;
+
+    /// Plafon pe durata blocarii. Fara el, cineva isi poate bloca soldul
+    /// pentru 100 de ani dintr-o greseala de conversie, ireversibil.
+    uint256 public constant MAX_BLOCARE = 365 days;
+
     /// Adrese care nu platesc demurrage si nu declanseaza taxe: contractele
     /// protocolului (vault, trezorerie, staking, DEX pair). Fara asta,
     /// tokenurile blocate in Vault s-ar eroda, ceea ce contrazice scopul
@@ -111,6 +129,7 @@ contract MonedaOamenilor is ERC20, AccessControl {
     event Distribuit(uint256 ars, uint256 trezorerie, uint256 validatori);
     event ParametruSchimbat(string nume, uint256 vechi, uint256 nou);
     event ScutireSchimbata(address indexed cont, bool scutit);
+    event SoldBlocatPanaLa(address indexed cont, uint64 panaLa);
 
     // ---------------------------------------------------------------
     // Erori
@@ -119,6 +138,9 @@ contract MonedaOamenilor is ERC20, AccessControl {
     error PraguriInversate();
     error PragSubMinim(uint256 cerut, uint256 minim);
     error AdresaZero();
+    error SoldBlocat(uint64 panaLa);
+    error DoarPrelungire();
+    error BlocarePreaLunga();
 
     constructor(address guvernanta_) ERC20("Moneda Oamenilor", "MO") {
         if (guvernanta_ == address(0)) revert AdresaZero();
@@ -142,6 +164,9 @@ contract MonedaOamenilor is ERC20, AccessControl {
         // Cont nou: nu are istoric de inactivitate. Nu il taxam pentru
         // timpul de dinainte sa existe.
         if (ultima == 0) return 0;
+
+        // Blocarea e scutire de demurrage — asta e tot beneficiul ei.
+        if (esteBlocat(cont)) return 0;
 
         uint256 sold = balanceOf(cont);
         if (sold == 0) return 0;
@@ -187,6 +212,36 @@ contract MonedaOamenilor is ERC20, AccessControl {
         }
 
         ultimaActivitate[cont] = block.timestamp;
+    }
+
+    // ===============================================================
+    // Blocare in-place
+    // ===============================================================
+
+    /// @notice Isi blocheaza propriul sold pana la `pana`, in schimbul
+    ///         scutirii de demurrage.
+    /// @dev Doar PRELUNGIRE. Nu exista iesire anticipata si nu exista
+    ///      penalizare — o clauza penala care ia 10% din capitalul
+    ///      consumatorului pentru exercitarea unui drept de retragere e
+    ///      prezumat abuziva (Legea 193/2000). Intr-o blocare absoluta,
+    ///      problema dispare: nu ai ce penaliza, fiindca nu exista iesire.
+    function blocheaza(uint64 pana) external {
+        if (pana <= blocatPanaLa[msg.sender] || pana <= block.timestamp) {
+            revert DoarPrelungire();
+        }
+        if (pana > block.timestamp + MAX_BLOCARE) revert BlocarePreaLunga();
+
+        // Decontam ce se datoreaza INAINTE de blocare: altfel cineva inactiv
+        // 6 luni s-ar bloca si ar scapa de demurrage-ul deja acumulat.
+        _deconteaza(msg.sender);
+
+        blocatPanaLa[msg.sender] = pana;
+        emit SoldBlocatPanaLa(msg.sender, pana);
+    }
+
+    /// @notice Soldul e blocat acum?
+    function esteBlocat(address cont) public view returns (bool) {
+        return block.timestamp < blocatPanaLa[cont];
     }
 
     /// @notice Oricine poate declansa decontarea pentru un cont.
@@ -245,13 +300,19 @@ contract MonedaOamenilor is ERC20, AccessControl {
             return;
         }
 
-        // 1. Deconteaza demurrage-ul expeditorului INAINTE de transfer,
+        // 1. Soldul blocat nu poate iesi. Nici prin transfer, nici prin
+        //    transferFrom, nici prin ardere.
+        if (de_la != address(0) && esteBlocat(de_la)) {
+            revert SoldBlocat(blocatPanaLa[de_la]);
+        }
+
+        // 2. Deconteaza demurrage-ul expeditorului INAINTE de transfer,
         //    altfel ar putea trimite tokeni pe care ii datoreaza deja.
         if (de_la != address(0)) {
             _deconteaza(de_la);
         }
 
-        // 2. Taxa de tranzactie, doar pe transferuri intre utilizatori.
+        // 3. Taxa de tranzactie, doar pe transferuri intre utilizatori.
         uint256 net = suma;
         bool taxabil =
             de_la != address(0) && catre != address(0) && !scutit[de_la] && !scutit[catre] && suma >= pragMicroTx;
@@ -269,7 +330,7 @@ contract MonedaOamenilor is ERC20, AccessControl {
 
         super._update(de_la, catre, net);
 
-        // 3. Porneste ceasul pentru destinatar daca e prima lui primire.
+        // 4. Porneste ceasul pentru destinatar daca e prima lui primire.
         //    Nu il resetam la fiecare primire: altfel oricine si-ar putea
         //    tine soldul "proaspat" trimitandu-si 1 wei de pe alt cont.
         if (catre != address(0) && ultimaActivitate[catre] == 0 && !scutit[catre]) {

@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {MonedaOamenilor} from "../src/MonedaOamenilor.sol";
-import {SavingsVault} from "../src/SavingsVault.sol";
 import {QuadraticDAO} from "../src/QuadraticDAO.sol";
 import {CircuitBreaker} from "../src/CircuitBreaker.sol";
 import {POLVesting} from "../src/POLVesting.sol";
@@ -13,7 +12,6 @@ import {POLVesting} from "../src/POLVesting.sol";
 /// contractele corecte individual pot fi conectate gresit.
 contract IntegrareTest is Test {
     MonedaOamenilor tok;
-    SavingsVault vault;
     QuadraticDAO dao;
     CircuitBreaker breaker;
     POLVesting vesting;
@@ -33,15 +31,12 @@ contract IntegrareTest is Test {
 
         tok = new MonedaOamenilor(deployer);
         breaker = new CircuitBreaker(deployer);
-        vault = new SavingsVault(address(tok), deployer);
         dao = new QuadraticDAO(address(tok), gardian);
         vesting = new POLVesting(address(tok), deployer, trez);
 
-        tok.setScutit(address(vault), true);
         tok.setScutit(address(dao), true);
         tok.setScutit(address(vesting), true);
         tok.setDestinatii(trez, stak);
-        vault.setTrezorerie(trez);
 
         // emisiune initiala inainte de predarea rolurilor
         tok.emite(ana, 1_000_000e18);
@@ -50,7 +45,6 @@ contract IntegrareTest is Test {
         tok.emite(deployer, 100_000e18);
 
         tok.grantRole(tok.GUVERNANTA(), address(dao));
-        vault.grantRole(vault.GUVERNANTA(), address(dao));
         vm.stopPrank();
 
         bytes4[] memory permise = new bytes4[](3);
@@ -62,8 +56,6 @@ contract IntegrareTest is Test {
 
         // trezoreria alimenteaza rezerva de randament
         vm.startPrank(trez);
-        tok.approve(address(vault), 50_000e18);
-        vault.alimenteazaRezerva(50_000e18);
         vm.stopPrank();
     }
 
@@ -90,21 +82,23 @@ contract IntegrareTest is Test {
         tok.deconteaza(ana);
         assertEq(tok.balanceOf(ana), soldInainte - datorat, "decontare gresita");
 
-        // --- 3. Ana se refugiaza in Vault ---
-        uint256 inVault = 100_000e18;
-        vm.startPrank(ana);
-        tok.approve(address(vault), inVault);
-        vault.depune(inVault, 12);
-        vm.stopPrank();
-
-        // --- 4. Un an mai tarziu, Vault-ul NU s-a erodat ---
-        skip(365 days);
-        assertEq(tok.demurrageDatorat(address(vault)), 0, "Vault-ul s-a erodat");
-
-        uint256 inainteRetragere = tok.balanceOf(ana);
+        // --- 3. Ana se blocheaza in loc sa se erodeze ---
+        // Blocare IN-PLACE: tokenii raman in contul ei. Nu exista custodie,
+        // nu exista randament promis, nu exista penalizare de iesire.
+        uint256 soldLaBlocare = tok.balanceOf(ana);
         vm.prank(ana);
-        vault.retrage(0);
-        assertGt(tok.balanceOf(ana) - inainteRetragere, inVault, "randamentul nu s-a platit");
+        tok.blocheaza(uint64(block.timestamp + 300 days));
+
+        // --- 4. Aproape un an mai tarziu, soldul e intact ---
+        skip(299 days);
+        assertEq(tok.balanceOf(ana), soldLaBlocare, "soldul blocat s-a erodat");
+        assertEq(tok.demurrageDatorat(ana), 0, "demurrage pe sold blocat");
+
+        // dupa expirare, poate misca din nou
+        skip(2 days);
+        assertFalse(tok.esteBlocat(ana));
+        vm.prank(ana);
+        tok.transfer(bob, 1e18);
 
         // --- 5. Bob propune scaderea taxei si castiga votul ---
         uint256 id = dao.propune("Scade taxa la 0.3%", address(tok), abi.encodeCall(MonedaOamenilor.setTaxa, (30)));
