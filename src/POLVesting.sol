@@ -40,8 +40,10 @@ contract POLVesting {
     event GraficCreat(address indexed beneficiar, uint256 index, uint256 total, uint256 durata);
     event Eliberat(address indexed beneficiar, uint256 index, uint256 suma);
     event Revocat(address indexed beneficiar, uint256 index, uint256 returnat);
+    event AdministratorSchimbat(address vechi, address nou);
 
     error NuEAdministrator();
+    error AdresaZero();
     error NimicDeEliberat();
     error DejaRevocat();
     error SumaZero();
@@ -56,6 +58,22 @@ contract POLVesting {
         token = IERC20(token_);
         administrator = administrator_;
         trezorerie = trezorerie_;
+    }
+
+    /// @notice Preda administrarea mai departe — de regula catre DAO.
+    /// @dev Functia lipsea complet. Fara ea, cine facea deploy ramanea
+    ///      administrator PERPETUU: putea crea si revoca grafice de vesting
+    ///      oricand, fara vot si fara timelock — in timp ce scriptul de
+    ///      deploy afisa "Deployer-ul nu mai are putere".
+    ///      Constatarea §0.4.C din docs/AUDIT-JURIDIC.md.
+    ///
+    ///      Nu permitem address(0): "renuntarea" la administrare ar bloca
+    ///      definitiv crearea de grafice noi, ceea ce aproape sigur nu e
+    ///      ce vrea cineva care apasa butonul din greseala.
+    function setAdministrator(address nou) external doarAdmin {
+        if (nou == address(0)) revert AdresaZero();
+        emit AdministratorSchimbat(administrator, nou);
+        administrator = nou;
     }
 
     function creeazaGrafic(address beneficiar, uint128 total, uint64 cliff, uint64 durata)

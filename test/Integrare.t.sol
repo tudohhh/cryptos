@@ -104,16 +104,10 @@ contract IntegrareTest is Test {
         uint256 inainteRetragere = tok.balanceOf(ana);
         vm.prank(ana);
         vault.retrage(0);
-        assertGt(
-            tok.balanceOf(ana) - inainteRetragere, inVault, "randamentul nu s-a platit"
-        );
+        assertGt(tok.balanceOf(ana) - inainteRetragere, inVault, "randamentul nu s-a platit");
 
         // --- 5. Bob propune scaderea taxei si castiga votul ---
-        uint256 id = dao.propune(
-            "Scade taxa la 0.3%",
-            address(tok),
-            abi.encodeCall(MonedaOamenilor.setTaxa, (30))
-        );
+        uint256 id = dao.propune("Scade taxa la 0.3%", address(tok), abi.encodeCall(MonedaOamenilor.setTaxa, (30)));
 
         vm.startPrank(bob);
         tok.approve(address(dao), type(uint256).max);
@@ -155,11 +149,8 @@ contract IntegrareTest is Test {
         vm.stopPrank();
 
         // DAO-ul, prin vot, tot poate
-        uint256 id = dao.propune(
-            "praguri noi",
-            address(tok),
-            abi.encodeCall(MonedaOamenilor.setPraguri, (45 days, 120 days))
-        );
+        uint256 id =
+            dao.propune("praguri noi", address(tok), abi.encodeCall(MonedaOamenilor.setPraguri, (45 days, 120 days)));
         vm.startPrank(bob);
         tok.approve(address(dao), type(uint256).max);
         dao.voteaza(id, 200, true);
@@ -174,9 +165,7 @@ contract IntegrareTest is Test {
     // Conectari gresite pe care le prinde doar integrarea
     // ==============================================================
     function test_MizaDinDAONuSeErodeazaInTimpulVotarii() public {
-        uint256 id = dao.propune(
-            "test", address(tok), abi.encodeCall(MonedaOamenilor.setTaxa, (40))
-        );
+        uint256 id = dao.propune("test", address(tok), abi.encodeCall(MonedaOamenilor.setTaxa, (40)));
 
         vm.startPrank(bob);
         tok.approve(address(dao), type(uint256).max);
@@ -222,14 +211,10 @@ contract IntegrareTest is Test {
         uint256 arsTotal = tok.totalArs() - arsInitial;
 
         // Tot ce a disparut din supply a fost ars. Nimic nu s-a evaporat.
-        assertEq(
-            tok.totalSupply(), supplyInitial - arsTotal, "supply-ul nu se reconciliaza"
-        );
+        assertEq(tok.totalSupply(), supplyInitial - arsTotal, "supply-ul nu se reconciliaza");
     }
 
-    function testFuzz_SupplyNuCresteNiciodataFaraEmisiune(uint96 suma, uint32 zile)
-        public
-    {
+    function testFuzz_SupplyNuCresteNiciodataFaraEmisiune(uint96 suma, uint32 zile) public {
         suma = uint96(bound(suma, 1e15, 100_000e18));
         zile = uint32(bound(zile, 1, 2000));
 

@@ -36,11 +36,18 @@ contract Deploy is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 
-        // Gardianul poate ANULA propuneri, nu le poate executa. Ar trebui
-        // sa fie un multisig, nu aceeasi cheie care face deploy.
-        address gardian = vm.envOr("GARDIAN", deployer);
-        address trezorerie = vm.envOr("TREZORERIE", deployer);
-        address staking = vm.envOr("STAKING", deployer);
+        // envAddress, NU envOr. Cu `envOr(..., deployer)`, o variabila de
+        // mediu uitata facea tacut ca gardianul, trezoreria si stakingul sa
+        // fie toate cheia de deploy — adica exact concentrarea de putere pe
+        // care restul scriptului incearca sa o desfaca. Mai bine esueaza
+        // deploy-ul cu "variabila lipseste" decat sa reuseasca gresit.
+        // Constatarea §6.2 din docs/AUDIT-JURIDIC.md.
+        address gardian = vm.envAddress("GARDIAN");
+        address trezorerie = vm.envAddress("TREZORERIE");
+        address staking = vm.envAddress("STAKING");
+
+        require(gardian != deployer, "GARDIAN nu poate fi cheia de deploy");
+        require(trezorerie != deployer, "TREZORERIE nu poate fi cheia de deploy");
 
         vm.startBroadcast(pk);
 
@@ -104,6 +111,12 @@ contract Deploy is Script {
         vault.renounceRole(vault.DEFAULT_ADMIN_ROLE(), deployer);
         breaker.renounceRole(breaker.DEFAULT_ADMIN_ROLE(), deployer);
 
+        // POLVesting lipsea complet din etapa asta. Deployer-ul ramanea
+        // administrator PERPETUU — putea crea si revoca grafice de vesting
+        // oricand, fara vot — in timp ce _raport() afisa contrariul.
+        // Constatarea §0.4.C din docs/AUDIT-JURIDIC.md.
+        vesting.setAdministrator(address(dao));
+
         vm.stopBroadcast();
 
         _verifica(deployer);
@@ -114,25 +127,13 @@ contract Deploy is Script {
     ///      Mai bine esueaza deploy-ul decat sa ramana o cheie cu puteri
     ///      depline si nimeni sa nu observe.
     function _verifica(address deployer) internal view {
-        require(
-            !token.hasRole(token.DEFAULT_ADMIN_ROLE(), deployer),
-            "deployer inca e admin pe token"
-        );
-        require(
-            !token.hasRole(token.GUVERNANTA(), deployer), "deployer inca e guvernanta"
-        );
+        require(!token.hasRole(token.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe token");
+        require(!token.hasRole(token.GUVERNANTA(), deployer), "deployer inca e guvernanta");
         require(!token.hasRole(token.EMITENT(), deployer), "deployer inca poate emite");
-        require(
-            !vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), deployer),
-            "deployer inca e admin pe vault"
-        );
-        require(
-            !breaker.hasRole(breaker.DEFAULT_ADMIN_ROLE(), deployer),
-            "deployer inca e admin pe breaker"
-        );
-        require(
-            token.hasRole(token.GUVERNANTA(), address(dao)), "DAO nu are guvernanta"
-        );
+        require(!vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe vault");
+        require(!breaker.hasRole(breaker.DEFAULT_ADMIN_ROLE(), deployer), "deployer inca e admin pe breaker");
+        require(token.hasRole(token.GUVERNANTA(), address(dao)), "DAO nu are guvernanta");
+        require(vesting.administrator() == address(dao), "deployer inca administreaza vesting-ul");
         require(token.scutit(address(vault)), "vault neexceptat: depozitele se erodeaza");
         require(token.scutit(address(dao)), "DAO neexceptat: mizele se topesc");
     }
@@ -147,7 +148,8 @@ contract Deploy is Script {
         console.log("SessionKeys      ", address(sesiuni));
         console.log("POLVesting       ", address(vesting));
         console.log("");
-        console.log("Roluri predate catre DAO. Deployer-ul nu mai are putere.");
+        console.log("Roluri predate catre DAO, inclusiv administrarea POLVesting.");
+        console.log("Verificat on-chain de _verifica(), nu doar afirmat aici.");
         console.log("");
         console.log("RAMAS DE FACUT MANUAL:");
         console.log(" - acorda rolul ORACOL pe CircuitBreaker (minim 5 adrese)");

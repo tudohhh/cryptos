@@ -31,7 +31,7 @@ valoare reală e o decizie proastă, indiferent cât de verzi sunt testele.
 | `AntiFlashloanGuard` | nu mai e necesar | — |
 | `StabilityFund` | **nu se implementează** — vezi ABATERI.md | — |
 
-**62 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
+**69 de teste trec**, inclusiv fuzz cu 512 rulări pe invariantele critice.
 
 ## Deploy
 
@@ -40,6 +40,8 @@ export PRIVATE_KEY=0x...
 export GARDIAN=0x...      # multisig, NU cheia de deploy
 export TREZORERIE=0x...
 export STAKING=0x...
+# toate sunt OBLIGATORII: scriptul dă revert dacă lipsesc sau dacă
+# GARDIAN/TREZORERIE coincid cu cheia de deploy
 
 forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast --verify
 ```
@@ -99,7 +101,19 @@ pe primele 30, 1% pe următoarele 60, 2.5% pe ultimele 10.
 Restul din împărțire merge la validatori, ca suma părților să fie exactă.
 
 **Plafoane peste care guvernanța nu poate trece:** 10%/lună demurrage,
-5% taxă, 20% APY. Un vot nu trebuie să poată confisca solduri.
+5% taxă, 20% APY, și **perioadă de grație minimă de 30 de zile**.
+
+Ultima a fost adăugată după audit: fără ea, `setPraguri(1 secondă, 2 secunde)`
+combinat cu rata maximă dădea ~72% erodare anuală de la o secundă de
+inactivitate. Afirmația „un vot nu poate confisca solduri" era falsă exact pe
+vectorul ăsta. Vezi §0.4.B din [`docs/AUDIT-JURIDIC.md`](docs/AUDIT-JURIDIC.md).
+
+**Demurrage-ul este evitabil** printr-un auto-transfer sub pragul de
+micro-tranzacții. Comportamentul e documentat în
+[`docs/EVAZIUNE-DEMURRAGE.md`](docs/EVAZIUNE-DEMURRAGE.md), cu variante de
+rezolvare. Până la o decizie, **whitepaper-ul nu are voie să afirme că
+deținătorii inactivi plătesc demurrage** — la literă, plătesc doar cei
+neinformați.
 
 **Vault:** 3/6/12 luni, scutit de demurrage, randament finanțat dintr-o
 rezervă. Depunerea e refuzată dacă rezerva nu acoperă randamentul promis.

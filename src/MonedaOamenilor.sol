@@ -53,6 +53,14 @@ contract MonedaOamenilor is ERC20, AccessControl {
     /// Idem pentru taxa de tranzactie: 5%.
     uint256 public constant MAX_TAXA_BPS = 500;
 
+    /// Perioada de gratie minima. Fara ea, `setPraguri(1 seconds, 2 seconds)`
+    /// combinat cu rata maxima dadea ~72% erodare anuala de la o secunda de
+    /// inactivitate — si retroactiv pe intervalul deja scurs la momentul
+    /// votului. README afirma ca "un vot nu poate confisca solduri";
+    /// afirmatia era falsa exact pe vectorul asta.
+    /// Constatarea §0.4.B din docs/AUDIT-JURIDIC.md.
+    uint256 public constant MIN_PRAG_TRANSA1 = 30 days;
+
     // ---------------------------------------------------------------
     // Stare per utilizator
     // ---------------------------------------------------------------
@@ -109,6 +117,7 @@ contract MonedaOamenilor is ERC20, AccessControl {
     // ---------------------------------------------------------------
     error RataPesteplafon(uint256 ceruta, uint256 plafon);
     error PraguriInversate();
+    error PragSubMinim(uint256 cerut, uint256 minim);
     error AdresaZero();
 
     constructor(address guvernanta_) ERC20("Moneda Oamenilor", "MO") {
@@ -288,7 +297,10 @@ contract MonedaOamenilor is ERC20, AccessControl {
     }
 
     function setPraguri(uint256 prag1, uint256 prag2) external onlyRole(GUVERNANTA) {
+        if (prag1 < MIN_PRAG_TRANSA1) revert PragSubMinim(prag1, MIN_PRAG_TRANSA1);
         if (prag1 >= prag2) revert PraguriInversate();
+        emit ParametruSchimbat("pragTransa1", pragTransa1, prag1);
+        emit ParametruSchimbat("pragTransa2", pragTransa2, prag2);
         pragTransa1 = prag1;
         pragTransa2 = prag2;
     }
